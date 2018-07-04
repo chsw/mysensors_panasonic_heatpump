@@ -47,6 +47,10 @@
 // Safe baud rate for a 3.3V device
 #define MY_BAUD_RATE 9600
 
+// MySensors libraries
+#include <SPI.h>
+#include <MySensors.h>
+
 // From library at https://github.com/ToniA/arduino-heatpumpir
 #include <IRSender.h>
 #include <PanasonicHeatpumpIR.h>
@@ -126,12 +130,6 @@ int rbytes;
 // accurate timing
 uint16_t RESOLUTION=20;
 
-
-
-// MySensors libraries
-#include <SPI.h>
-#include <MySensors.h>
-
 // Child ID's of this node
 #define CHILD_STATUS     1
 #define CHILD_SETPOINT   2
@@ -139,7 +137,8 @@ uint16_t RESOLUTION=20;
 #define CHILD_FAN   4
 #define CHILD_AIRSWING    5
 #define CHILD_PROFILE 6
-#define CHILD_VAR1 7
+#define CHILD_VAR 7
+
     long lastUpdateSent = 0;
 class hvac
 { 
@@ -367,8 +366,8 @@ MyMessage msgMode(CHILD_MODE,V_PERCENTAGE);
 MyMessage msgFan(CHILD_FAN,V_PERCENTAGE);
 MyMessage msgAirSwing(CHILD_AIRSWING,V_PERCENTAGE);
 MyMessage msgProfile(CHILD_PROFILE,V_PERCENTAGE);
-MyMessage msgVar1(CHILD_VAR1, V_VAR1);
-MyMessage msgVar2(CHILD_VAR1, V_VAR2);
+MyMessage msgVar1(CHILD_VAR, V_VAR1);
+MyMessage msgVar2(CHILD_VAR, V_VAR2);
 
 // IR led on PWM output-capable digital pin 3
 IRSenderPWM irSender(3);
@@ -469,7 +468,7 @@ void loop()
     {
       lastTransmitt = millis();
       // Transmitt new values
-      sendHeatpumpIRCommand(0);
+      sendHeatpumpIRCommand();
       delay(10);
       interuptTriggered = false; // Trigga inte på våra egna pulser
     }
@@ -533,19 +532,8 @@ void loop()
 
 
 // Handle incoming messages from the MySensors Gateway
-void receive(const MyMessage &message) {
-
-  const char *irData;
-
-  // V_IR type message
-  if (message.type==V_IR_SEND) {
-    Serial.println(F("Received IR send command..."));
-    irData = message.getString();
-    Serial.print(F("Code: 0x"));
-    Serial.println(irData);
-    sendHeatpumpIRCommand(irData);
-  }
-
+void receive(const MyMessage &message) 
+{
   bool triggerSend = false;
   if(message.sensor == msgStatus.sensor)
   {
@@ -770,97 +758,39 @@ int receivePulses(void) {
   }
 }
 
-// Decode the IR command and send the IR command to the heatpump
-void sendHeatpumpIRCommand(const char *irCommandString) {
-/*
-  // irCommandString is an 8-digit hex digit
-  long irCommand = 0;
-  int sscanfStatus = sscanf(irCommandString, "%lx", &irCommand);
-
-  if (sscanfStatus == 1) {
-    Serial.print(F("IR code conversion OK: 0x"));
-    Serial.println(irCommand, HEX);
-  } else {
-    Serial.println(F("Failed to convert IR hex code to number"));
-  }
-*/
-/*
-The heatpump command is packed into a 32-bit hex number, see
-libraries\HeatpumpIR\HeatpumpIR.h for the constants
-
-12345678
-  3 MODEL
-   4 POWER
-    5 OPERATING MODE
-     6 FAN SPEED
-      78 TEMPERATURE IN HEX
-
-00213416 (as an example of a valid code)
-  2 = PanasonicJKE
-   1 = Power ON
-    3 = COOL
-     4 = FAN 4
-      16 = Temperature 22 degrees (0x16 = 22)
- */
-/*
-  byte model = (irCommand & 0x00F00000) >> 20;
-  byte power = (irCommand & 0x00010000) >> 16;
-  byte mode  = (irCommand & 0x0000F000) >> 12;
-  byte fan   = (irCommand & 0x00000F00) >> 8;
-  byte temp  = (irCommand & 0x000000FF);
-*/
-  const char* buf;
-/*  Serial.print(F("Model: "));
-
-  buf = heatpumpIR[2]->model();
-  // 'model' is a PROGMEM pointer, so need to write a byte at a time
-  while (char modelChar = pgm_read_byte(buf++))
-  {
-    Serial.print(modelChar);
-  }
-  Serial.println();
-*/
-/*  Serial.print(F("Model #: ")); Serial.println(model);
-  Serial.print(F("Power: ")); Serial.println(power);
-  Serial.print(F("Mode: ")); Serial.println(mode);
-  Serial.print(F("Fan: ")); Serial.println(fan);
-  Serial.print(F("Temp: ")); Serial.println(temp);
-*/
-  // Heatpump models start from 0, i.e. model number is always less than the number of different models
-  //if (model < models) 
-  {
-    // This is a supported model
-
+// Send current model to heat pump
+void sendHeatpumpIRCommand() 
+{
+  // IR template from NZ9SKE remote 
   static const uint8_t irtemplate[27] PROGMEM = {
     0x02, 0x20, 0xE0, 0x04, 0x00, 0x00, 0x00, 0x06, 0x02, 0x20, 0xE0, 0x04, 0x00, 0x08, 0x00, 0x80, 0x00, 0x00, 0x00, 0x0E, 0xE0, 0x00, 0x00, 0x89, 0x00, 0x00, 0x00
   //   0     1     2     3     4     5     6     7     8     9    10    11    12    13    14   15     16    17    18    19    20    21    22    23    24    25    26
   };
+  // Create a copy 
   uint8_t buff[27];
   memcpy_P(buff, irtemplate, sizeof(irtemplate));
-
-    setStatus(buff, current.status);
-    setMode(buff, current.getMode());
-    setSetpoint(buff, current.getSetpoint());
-    setAirSwingVertical(buff, current.airSwing);
-    setFan(buff, current.getFan());
-    setProfile(buff, current.profile);
-    
-    Serial.println(F("Sending IR code to heatpump: "));
-    //heatpumpIR[2]->send(irSender, current.status,current.mode, current.fan, current.setpoint, VDIR_UP, HDIR_AUTO);
-    sendPanasonic(irSender, buff);
-    printBuffer(buff);
-
-    //uint8_t *buffer = heatpumpIR[2]->getLastBuffer();
-    verifyBuffer( readStatus(buff), current.status, "status");
-    verifyBuffer( readMode(buff), current.mode, "mode");
-    verifyBuffer( readSetpoint(buff), current.getSetpoint(), "setpoint");
-    verifyBuffer( readFan(buff), current.getFan(), "fan");
-    verifyBuffer( readAirSwingVertical(buff), current.airSwing, "airSwing");
-    verifyBuffer( readProfile(buff), current.profile, "profile");
-
-  }
+  // set values
+  setStatus(buff, current.status);
+  setMode(buff, current.getMode());
+  setSetpoint(buff, current.getSetpoint());
+  setAirSwingVertical(buff, current.airSwing);
+  setFan(buff, current.getFan());
+  setProfile(buff, current.profile);
+  // Debug info - ir hex codes 
+  Serial.println(F("Sending IR code to heatpump: "));
+  sendPanasonic(irSender, buff);
+  // Debug info - human readable
+  printBuffer(buff);
+  // Debug info - Verify that we can read the same values as we set from the buffer
+  verifyBuffer( readStatus(buff), current.status, "status");
+  verifyBuffer( readMode(buff), current.mode, "mode");
+  verifyBuffer( readSetpoint(buff), current.getSetpoint(), "setpoint");
+  verifyBuffer( readFan(buff), current.getFan(), "fan");
+  verifyBuffer( readAirSwingVertical(buff), current.airSwing, "airSwing");
+  verifyBuffer( readProfile(buff), current.profile, "profile");
 }
 
+// Print send buffer (ir codes) in human readable code
 void printBuffer(byte *buffer)
 {
   Serial.print(F("  Power status: "));
