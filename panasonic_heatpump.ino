@@ -47,16 +47,9 @@
 // Safe baud rate for a 3.3V device
 #define MY_BAUD_RATE 9600
 
-// HeatpumpIR libraries,
-//#include <FujitsuHeatpumpIR.h>
-//#include <PanasonicCKPHeatpumpIR.h>
+// From library at https://github.com/ToniA/arduino-heatpumpir
+#include <IRSender.h>
 #include <PanasonicHeatpumpIR.h>
-//#include <CarrierHeatpumpIR.h>
-//#include <MideaHeatpumpIR.h>
-//#include <MitsubishiHeatpumpIR.h>
-//#include <SamsungHeatpumpIR.h>
-//#include <SharpHeatpumpIR.h>
-//#include <DaikinHeatpumpIR.h>
 
 // Humidity & temperature sensor
 #include <Wire.h>
@@ -84,26 +77,9 @@
 #define DOMO_VERTICAL_AIR_DOWN3 50
 #define DOMO_VERTICAL_AIR_DOWN4 60
 
-#define PANA_AUTO 0x00
-#define PANA_HEAT 0x40
-#define PANA_COOL 0x30
-#define PANA_DRY 0x20
-#define PANA_FAN 0x60
-#define PANA_FAN_AUTO 0xA0
-#define PANA_FAN1 0x30
-#define PANA_FAN2 0x40
-#define PANA_FAN3 0x50
-#define PANA_FAN4 0x60
-#define PANA_FAN5 0x70
-#define PANA_PROFILE_AUTO 0x00
-#define PANA_PROFILE_POWERFUL 0x01
-#define PANA_PROFILE_QUIET 0x20
-#define PANA_VERTICAL_AIR_AUTO 0x0F
-#define PANA_VERTICAL_AIR_STRAIGHT 0x01
-#define PANA_VERTICAL_AIR_DOWN1 0x02
-#define PANA_VERTICAL_AIR_DOWN2 0x03
-#define PANA_VERTICAL_AIR_DOWN3 0x04
-#define PANA_VERTICAL_AIR_DOWN4 0x05
+
+#define PANASONIC_AIRCON2_PROFILE_NORMAL 0x00
+
 
 uint32_t mark_header_avg = 0;
 uint16_t mark_header_cnt = 0;
@@ -393,14 +369,6 @@ MyMessage msgAirSwing(CHILD_AIRSWING,V_PERCENTAGE);
 MyMessage msgProfile(CHILD_PROFILE,V_PERCENTAGE);
 MyMessage msgVar1(CHILD_VAR1, V_VAR1);
 MyMessage msgVar2(CHILD_VAR1, V_VAR2);
-// Array with all supported heatpump models
-PanasonicHeatpumpIR *heatpumpIR[] = { //new PanasonicCKPHeatpumpIR(), // 0, keep this if you don't remove the timer for cancelling Panasonic CKP messages
-                             new PanasonicDKEHeatpumpIR(), // 1
-                             new PanasonicJKEHeatpumpIR(), // 2
-                             new PanasonicNKEHeatpumpIR() // 3
-                           };
-
-uint8_t models = sizeof(heatpumpIR) / sizeof(HeatpumpIR*);
 
 // IR led on PWM output-capable digital pin 3
 IRSenderPWM irSender(3);
@@ -1327,15 +1295,15 @@ int readMode(byte *bytes)
 
         // if this byte is used for other things, first mask the correct bits
           switch ((bytes[13]) & 0xF0){ // masks the first 4 bits 1111 0000
-            case PANA_AUTO: // auto
+            case PANASONIC_AIRCON2_MODE_AUTO: // auto
                 return DOMO_MODE_AUTO;
-            case PANA_HEAT: // heat
+            case PANASONIC_AIRCON2_MODE_HEAT: // heat
                 return DOMO_MODE_HEAT;
-            case PANA_COOL: // cool
+            case PANASONIC_AIRCON2_MODE_COOL: // cool
                 return DOMO_MODE_COOL;
-            case PANA_DRY: // dry
+            case PANASONIC_AIRCON2_MODE_DRY: // dry
                 return DOMO_MODE_DRY;
-            case PANA_FAN: // fan
+            case PANASONIC_AIRCON2_MODE_FAN: // fan
                 return DOMO_MODE_FAN;
             default:
                 return DOMO_UNDEFINED;
@@ -1348,20 +1316,20 @@ void setMode(byte *bytes, int mode)
   switch(mode)
   {
     case DOMO_MODE_AUTO:
-      bytes[13] = (bytes[13]&0xF)|PANA_AUTO;
+      bytes[13] = (bytes[13]&0xF)|PANASONIC_AIRCON2_MODE_AUTO;
       break;
     case DOMO_MODE_HEAT:
     case DOMO_MODE_MAINTENANCE:
-      bytes[13] = (bytes[13]&0xF)|PANA_HEAT;
+      bytes[13] = (bytes[13]&0xF)|PANASONIC_AIRCON2_MODE_HEAT;
       break;
     case DOMO_MODE_COOL:
-      bytes[13] = (bytes[13]&0xF)|PANA_COOL;
+      bytes[13] = (bytes[13]&0xF)|PANASONIC_AIRCON2_MODE_COOL;
       break;
     case DOMO_MODE_DRY:
-      bytes[13] = (bytes[13]&0xF)|PANA_DRY;
+      bytes[13] = (bytes[13]&0xF)|PANASONIC_AIRCON2_MODE_DRY;
       break;
     case DOMO_MODE_FAN:
-      bytes[13] = (bytes[13]&0xF)|PANA_FAN;
+      bytes[13] = (bytes[13]&0xF)|PANASONIC_AIRCON2_MODE_FAN;
       break;
   }
 }
@@ -1404,19 +1372,19 @@ void setSetpoint(byte *bytes, float setpoint)
 int readFan(byte *bytes)
 {
           // check fanspeed
-        switch (bytes[16] & 0xF0){ // 0xF0 = 1111 0000 eerste 4 bits
-            case PANA_FAN_AUTO:
-                return DOMO_FAN_AUTO; // auto
-            case PANA_FAN1:
-                return DOMO_FAN_1; // fan 1
-            case PANA_FAN2:
-                return DOMO_FAN_2; // fan 2
-            case PANA_FAN3:
-                return DOMO_FAN_3; // fan 3
-            case PANA_FAN4:
-                return DOMO_FAN_4; // fan 4
-            case PANA_FAN5:
-                return DOMO_FAN_5; // fan 5
+        switch (bytes[16] & 0xF0){ 
+            case PANASONIC_AIRCON2_FAN_AUTO:
+                return DOMO_FAN_AUTO; 
+            case PANASONIC_AIRCON2_FAN1:
+                return DOMO_FAN_1; 
+            case PANASONIC_AIRCON2_FAN2:
+                return DOMO_FAN_2; 
+            case PANASONIC_AIRCON2_FAN3:
+                return DOMO_FAN_3; 
+            case PANASONIC_AIRCON2_FAN4:
+                return DOMO_FAN_4; 
+            case PANASONIC_AIRCON2_FAN5:
+                return DOMO_FAN_5; 
             default:
               return DOMO_UNDEFINED;
         }
@@ -1426,22 +1394,22 @@ void setFan(byte *bytes, int fan)
     switch(fan)
   {
     case DOMO_FAN_AUTO:
-      bytes[16] = (bytes[16]&0xF)|PANA_FAN_AUTO;
+      bytes[16] = (bytes[16]&0xF)|PANASONIC_AIRCON2_FAN_AUTO;
       break;
     case DOMO_FAN_1:
-      bytes[16] = (bytes[16]&0xF)|PANA_FAN1;
+      bytes[16] = (bytes[16]&0xF)|PANASONIC_AIRCON2_FAN1;
       break;
     case DOMO_FAN_2:
-      bytes[16] = (bytes[16]&0xF)|PANA_FAN2;
+      bytes[16] = (bytes[16]&0xF)|PANASONIC_AIRCON2_FAN2;
       break;
     case DOMO_FAN_3:
-      bytes[16] = (bytes[16]&0xF)|PANA_FAN3;
+      bytes[16] = (bytes[16]&0xF)|PANASONIC_AIRCON2_FAN3;
       break;
     case DOMO_FAN_4:
-      bytes[16] = (bytes[16]&0xF)|PANA_FAN4;
+      bytes[16] = (bytes[16]&0xF)|PANASONIC_AIRCON2_FAN4;
       break;
     case DOMO_FAN_5:
-      bytes[16] = (bytes[16]&0xF)|PANA_FAN5;
+      bytes[16] = (bytes[16]&0xF)|PANASONIC_AIRCON2_FAN5;
       break;
   }
 }
@@ -1450,11 +1418,11 @@ int readProfile(byte *bytes)
 {
           // Check profile
         switch(bytes[21]){
-           case PANA_PROFILE_AUTO:
+           case PANASONIC_AIRCON2_PROFILE_NORMAL:
               return DOMO_PROFILE_NORMAL; 
-           case PANA_PROFILE_POWERFUL:
+           case PANASONIC_AIRCON2_POWERFUL:
               return DOMO_PROFILE_POWERFUL;
-           case PANA_PROFILE_QUIET:
+           case PANASONIC_AIRCON2_QUIET:
               return DOMO_PROFILE_QUIET; 
            default:
               return DOMO_UNDEFINED;
@@ -1465,13 +1433,13 @@ void setProfile(byte *bytes, int profile)
           // Check profile
         switch(profile){
            case DOMO_PROFILE_NORMAL:
-              bytes[21] = PANA_PROFILE_AUTO;
+              bytes[21] = PANASONIC_AIRCON2_PROFILE_NORMAL;
               break;
            case DOMO_PROFILE_POWERFUL:
-              bytes[21] = PANA_PROFILE_POWERFUL;
+              bytes[21] = PANASONIC_AIRCON2_POWERFUL;
               break;
            case DOMO_PROFILE_QUIET:
-              bytes[21] = PANA_PROFILE_QUIET;
+              bytes[21] = PANASONIC_AIRCON2_QUIET;
               break;
         }
 }
@@ -1481,17 +1449,17 @@ int readAirSwingVertical(byte *bytes)
 {
           // check vertical swing
         switch (bytes[16] & 0x0F){ // 0x0F = 0000 1111
-            case PANA_VERTICAL_AIR_AUTO:
+            case PANASONIC_AIRCON2_VS_AUTO:
                 return DOMO_VERTICAL_AIR_AUTO; // auto
-            case PANA_VERTICAL_AIR_STRAIGHT:
+            case PANASONIC_AIRCON2_VS_UP:
                 return DOMO_VERTICAL_AIR_STRAIGHT; // Straight
-            case PANA_VERTICAL_AIR_DOWN1:
+            case PANASONIC_AIRCON2_VS_MUP:
                 return DOMO_VERTICAL_AIR_DOWN1; // down 1
-            case PANA_VERTICAL_AIR_DOWN2:
+            case PANASONIC_AIRCON2_VS_MIDDLE:
                 return DOMO_VERTICAL_AIR_DOWN2; // down 2
-            case PANA_VERTICAL_AIR_DOWN3:
+            case PANASONIC_AIRCON2_VS_MDOWN:
                 return DOMO_VERTICAL_AIR_DOWN3; // down 3
-            case PANA_VERTICAL_AIR_DOWN4:
+            case PANASONIC_AIRCON2_VS_DOWN:
                 return DOMO_VERTICAL_AIR_DOWN4; // down 4
             default:
                 return DOMO_UNDEFINED;
@@ -1503,22 +1471,22 @@ void setAirSwingVertical(byte *bytes, int airswing)
           // check vertical swing
         switch (airswing){
             case DOMO_VERTICAL_AIR_AUTO:
-                bytes[16] = (bytes[16] & 0xF0) | PANA_VERTICAL_AIR_AUTO;
+                bytes[16] = (bytes[16] & 0xF0) | PANASONIC_AIRCON2_VS_AUTO;
                 break;
             case DOMO_VERTICAL_AIR_STRAIGHT:
-                bytes[16] = (bytes[16] & 0xF0) | PANA_VERTICAL_AIR_STRAIGHT;
+                bytes[16] = (bytes[16] & 0xF0) | PANASONIC_AIRCON2_VS_UP;
                 break;
             case DOMO_VERTICAL_AIR_DOWN1:
-                bytes[16] = (bytes[16] & 0xF0) | PANA_VERTICAL_AIR_DOWN1;
+                bytes[16] = (bytes[16] & 0xF0) | PANASONIC_AIRCON2_VS_MUP;
                 break;
             case DOMO_VERTICAL_AIR_DOWN2:
-                bytes[16] = (bytes[16] & 0xF0) | PANA_VERTICAL_AIR_DOWN2;
+                bytes[16] = (bytes[16] & 0xF0) | PANASONIC_AIRCON2_VS_MIDDLE;
                 break;
             case DOMO_VERTICAL_AIR_DOWN3:
-                bytes[16] = (bytes[16] & 0xF0) | PANA_VERTICAL_AIR_DOWN3;
+                bytes[16] = (bytes[16] & 0xF0) | PANASONIC_AIRCON2_VS_MDOWN;
                 break;
             case DOMO_VERTICAL_AIR_DOWN4:
-                bytes[16] = (bytes[16] & 0xF0) | PANA_VERTICAL_AIR_DOWN4;
+                bytes[16] = (bytes[16] & 0xF0) | PANASONIC_AIRCON2_VS_DOWN;
                 break;
         }
 }
