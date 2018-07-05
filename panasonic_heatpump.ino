@@ -22,18 +22,8 @@
  * Version 1.0 - chsw - https://github.com/chsw/mysensors_panasonic_heatpump
  *
  * DESCRIPTION
- * Heatpump controller
+ * Mysensor node thats emulate a Panasonic heat pump remote for Domoticz
  */
-
-
- /*
-  * This sketch is for the cabin project, to control a heatpump, running on Sensebender
-  * https://www.mysensors.org/hardware/micro
-  *
-  * The sketch is based on the 'HeatpumpIRController' example of the MySensors project
-  */
-
-
 
 // Enable debug prints to serial monitor
 #define MY_DEBUG
@@ -81,44 +71,18 @@
 #define DOMO_VERTICAL_AIR_DOWN3 50
 #define DOMO_VERTICAL_AIR_DOWN4 60
 
-
 #define PANASONIC_AIRCON2_PROFILE_NORMAL 0x00
 
-
-uint32_t mark_header_avg = 0;
-uint16_t mark_header_cnt = 0;
-uint32_t mark_bit_avg = 0;
-uint16_t mark_bit_cnt = 0;
-uint32_t space_zero_avg = 0;
-uint16_t space_zero_cnt = 0;
-uint32_t space_one_avg = 0;
-uint16_t space_one_cnt = 0;
-uint32_t space_header_avg = 0;
-uint16_t space_header_cnt = 0;
-uint32_t space_pause_avg = 0;
-uint16_t space_pause_cnt = 0;
-// we will store up to 1024 symbols
-//char symbols[600];  // decoded symbols
-uint16_t currentpulse = 0; // index for pulses we're storing
-// Decoded bytes
-byte byteCount = 0;
-//byte bytes[64];
+// Buffer for received ir data
 #define bufferLength 300
 byte irbytes[bufferLength];
 
-int rbytes;
-
-
-#define IRpin_PIN      PIND
-#define IRpin 2
+#define IRpin_PIN   PIND
+#define IRpin       2
 // the maximum pulse we'll listen for - 65 milliseconds is a long time
 #define MAXPULSE 65000
 // The thresholds for different symbols
-//uint16_t MARK_THRESHOLD_BIT_HEADER    = 0; // Value between BIT MARK and HEADER MARK
-//uint16_t SPACE_THRESHOLD_ZERO_ONE     = 0; // Value between ZERO SPACE and ONE SPACE
-//uint16_t SPACE_THRESHOLD_ONE_HEADER   = 0; // Value between ONE SPACE and HEADER SPACE
-//uint16_t SPACE_THRESHOLD_HEADER_PAUSE = 0; // Value between HEADER SPACE and PAUSE SPACE (Panasonic/Midea only)
-    // Panasonic cs
+// Panasonic cs
 #define    MARK_THRESHOLD_BIT_HEADER     2000
 #define     SPACE_THRESHOLD_ZERO_ONE      800
 #define     SPACE_THRESHOLD_ONE_HEADER   1500
@@ -133,54 +97,58 @@ uint16_t RESOLUTION=20;
 // Child ID's of this node
 #define CHILD_STATUS     1
 #define CHILD_SETPOINT   2
-#define CHILD_MODE 3
-#define CHILD_FAN   4
-#define CHILD_AIRSWING    5
-#define CHILD_PROFILE 6
-#define CHILD_VAR 7
-
-    long lastUpdateSent = 0;
-class hvac
+#define CHILD_MODE       3
+#define CHILD_FAN        4
+#define CHILD_AIRSWING   5
+#define CHILD_PROFILE    6
+#define CHILD_VAR        7
+    
+class HeatpumpModel
 { 
   private:
     bool isMaintenance = false;
     void triggerMaintenanceDirty()
     {
-        mode_dirty = true;
-        fan_dirty=true;
-        setpoint_dirty=true;
-        profile_dirty=true;
+        modeIsDirty = true;
+        fanIsDirty=true;
+        setpointIsDirty=true;
+        profileIsDirty=true;
     }
   public:
     bool status = 1;
-    bool status_dirty = false;
-    int mode= 10;
-    bool mode_dirty = false;
-    float setpoint_auto= 20;
-    float setpoint_heat=19;
-    float setpoint_cool=25;
-    float setpoint_dry=16;
-    float setpoint_maintenance=10;
-    bool setpoint_dirty=false;
-    int fan_auto=10;
-    int fan_heat=10;
-    int fan_cool=10;
-    int fan_dry=10;
-    int fan_fan=20;
-    bool fan_dirty=false;
-    int airSwing=0;
-    bool airSwing_dirty=false;
-    int profile=10;
-    bool profile_dirty=false;
-    bool var1_dirty=false;
-    bool var2_dirty=false;
-
+    bool statusIsDirty = false;
+    
+    int mode = 10;
+    bool modeIsDirty = false;
+    
+    float setpointAuto = 20;
+    float setpointHeat = 19;
+    float setpointCool = 25;
+    float setpointDry = 16;
+    float setpointMaintenance = 10;
+    bool setpointIsDirty = false;
+    
+    int fanAuto = 10;
+    int fanHeat = 10;
+    int fanCool = 10;
+    int fanDry = 10;
+    int fanFan = 20;
+    bool fanIsDirty = false;
+    
+    int airSwing = 0;
+    bool airSwingIsDirty = false;
+    
+    int profile = 10;
+    bool profileIsDirty = false;
+    
+    bool var1IsDirty = false;
+    bool var2IsDirty = false;
 
     void setSetpoint(float temp)
     {
         if(temp > 30.0 || temp < 8.0)
          {
-          setpoint_dirty=true;
+          setpointIsDirty=true;
           return;
          }
         if(temp < 16.0)
@@ -190,11 +158,11 @@ class hvac
             case DOMO_MODE_COOL:
             case DOMO_MODE_DRY:
             case DOMO_MODE_FAN:
-              setpoint_dirty = true;
+              setpointIsDirty = true;
               return;
           }
-          setpoint_maintenance = temp;
-          var2_dirty=true;
+          setpointMaintenance = temp;
+          var2IsDirty=true;
           if(isMaintenance == false)
           {
             isMaintenance = true;
@@ -214,43 +182,42 @@ class hvac
           switch(mode)
           {
             case DOMO_MODE_AUTO:
-              setpoint_auto=temp;
+              setpointAuto=temp;
               break;
             case DOMO_MODE_HEAT:
-              setpoint_heat=temp;
+              setpointHeat=temp;
               break;
             case DOMO_MODE_COOL:
-              setpoint_cool=temp;
+              setpointCool=temp;
               break;
             case DOMO_MODE_DRY:
-              setpoint_dry=temp;
+              setpointDry=temp;
               break;
             case DOMO_MODE_FAN:
               break;
           }
-          var1_dirty = true;
+          var1IsDirty = true;
         }
-        setpoint_dirty=true;
+        setpointIsDirty=true;
     }
 
     float getSetpoint()
     {
       if(isMaintenance)
-        return setpoint_maintenance;
+        return setpointMaintenance;
       switch(mode)
       {
         case DOMO_MODE_AUTO:
-          return setpoint_auto;
+          return setpointAuto;
         case DOMO_MODE_HEAT:
-          return setpoint_heat;
+          return setpointHeat;
         case DOMO_MODE_COOL:
-          return setpoint_cool;
+          return setpointCool;
         case DOMO_MODE_DRY:
-          return setpoint_dry;
+          return setpointDry;
         case DOMO_MODE_FAN:
           return 27;
       }
-      
     }
 
     int getFan()
@@ -260,38 +227,38 @@ class hvac
       switch(mode)
       {
         case DOMO_MODE_AUTO:
-          return fan_auto;
+          return fanAuto;
         case DOMO_MODE_HEAT:
-          return fan_heat;
+          return fanHeat;
         case DOMO_MODE_COOL:
-          return fan_cool;
+          return fanCool;
         case DOMO_MODE_DRY:
-          return fan_dry;
+          return fanDry;
         case DOMO_MODE_FAN:
-          return fan_fan;
+          return fanFan;
       }
     }
 
     void setFan(int newfan)
     {
-      fan_dirty = true;
-      var2_dirty=true;
+      fanIsDirty = true;
+      var2IsDirty=true;
       switch(mode)
       {
         case DOMO_MODE_AUTO:
-          fan_auto=newfan;
+          fanAuto=newfan;
           break;
         case DOMO_MODE_HEAT:
-          fan_heat=newfan;
+          fanHeat=newfan;
           break;
         case DOMO_MODE_COOL:
-          fan_cool=newfan;
+          fanCool=newfan;
           break;
         case DOMO_MODE_DRY:
-          fan_dry=newfan;
+          fanDry=newfan;
           break;
         case DOMO_MODE_FAN:
-          fan_fan=newfan;
+          fanFan=newfan;
           break;
       }
     }
@@ -304,7 +271,7 @@ class hvac
     }
     void setProfile(int newProfile)
     {
-      profile_dirty=true;
+      profileIsDirty=true;
       if(isMaintenance)
         return;
         profile = newProfile;
@@ -333,32 +300,35 @@ class hvac
           triggerMaintenanceDirty();
         }
         mode=newMode;
-        mode_dirty=true;
+        modeIsDirty=true;
       }
-      setpoint_dirty = true;
-      fan_dirty = true;
+      setpointIsDirty = true;
+      fanIsDirty = true;
     }
-} current;
+} model;
 
 struct VAR1_DATA
 {
-    byte setpoint_auto;
-    byte setpoint_heat;
-    byte setpoint_cool;
-    byte setpoint_dry;
+    byte setpointAuto;
+    byte setpointHeat;
+    byte setpointCool;
+    byte setpointDry;
 } ;
 struct VAR2_DATA
 {
-  byte setpoint_maintenance;
-  byte fan_auto:4;
-  byte fan_heat:4;
-  byte fan_cool:4;
-  byte fan_dry:4;
-  byte fan_fan:4;
+  byte setpointMaintenance;
+  byte fanAuto:4;
+  byte fanHeat:4;
+  byte fanCool:4;
+  byte fanDry:4;
+  byte fanFan:4;
 };
 
 long lastTransmitt = 0;
+long lastUpdateSent = 0;
 long lastCommandReceived = 0;
+bool interuptTriggered = false;
+
 // MySensors messages of this node
 MyMessage msgSetpoint(CHILD_SETPOINT, V_HVAC_SETPOINT_HEAT);
 MyMessage msgStatus(CHILD_STATUS, V_STATUS);
@@ -375,24 +345,21 @@ IRSenderPWM irSender(3);
 
 void setup()
 {
-  Serial.println(F("HeatpumpIR sensor starting up..."));
-    request(msgVar1.sensor, msgVar1.type);
-    request(msgVar2.sensor, msgVar2.type);
-    request(msgStatus.sensor, msgStatus.type);
-    request(msgMode.sensor, msgMode.type);
-//    request(msgSetpoint.sensor, msgSetpoint.type);
-//    request(msgFan.sensor, msgFan.type);
-    request(msgAirSwing.sensor, msgAirSwing.type);
-    request(msgProfile.sensor, msgProfile.type);
+  Serial.println(F("Panasonic Heatpump Remote starting up..."));
+  request(msgVar1.sensor, msgVar1.type);
+  request(msgVar2.sensor, msgVar2.type);
+  request(msgStatus.sensor, msgStatus.type);
+  request(msgMode.sensor, msgMode.type);
+  request(msgAirSwing.sensor, msgAirSwing.type);
+  request(msgProfile.sensor, msgProfile.type);
 }
 
-
-void presentation() {
+void presentation()
+{
   // Send the sketch version information to the gateway and Controller
-  sendSketchInfo("Panasonic heat pump", "1.0");
+  sendSketchInfo("Panasonic heatpump remote", "1.0");
 
   // Register the sensors to the MySensors Gateway
-
   present(CHILD_STATUS,S_HVAC); // onoff
   present(CHILD_SETPOINT,S_HVAC, "Temperature"); // setpoint
   present(CHILD_MODE,S_DIMMER, "Mode"); // mode
@@ -400,16 +367,13 @@ void presentation() {
   present(CHILD_AIRSWING,S_DIMMER, "Air Swing"); // Air swing
   present(CHILD_PROFILE,S_DIMMER, "Profile"); // profile
 
-
-  //send(msgSetpoint.set(16,1));
-
+  // Listen for ir
   attachInterrupt(digitalPinToInterrupt(IRpin), interuptHandler, RISING);
 }
-bool  interuptTriggered = false;
+
 void interuptHandler()
 {
   interuptTriggered = true;
-//  detachInterrupt(digitalPinToInterrupt(IRpin));
 }
 
 void loop()
@@ -417,8 +381,6 @@ void loop()
   // Interrupt triggered - detected possible IR code
   if(interuptTriggered)
   {
-    currentpulse=0;
-    byteCount=0;
     Serial.println("Start listening for IR codes");
     long beforePulses = millis();
     int count = receivePulses();
@@ -431,9 +393,9 @@ void loop()
     Serial.print(afterPulses - beforePulses);
     Serial.println(F("ms."));
 
-    if(decodePanasonicCS(irbytes, count))
+    if(count > 0 && decodePanasonicCS(irbytes, count))
     {
-      fetchValues(irbytes);
+      transferRecivedDataToModel(irbytes);
     }
   }
   // If we received new command since last IR transmitt - transmitt model to heat pump
@@ -446,64 +408,64 @@ void loop()
     delay(10); // This delay is needed as transmitted signals might be picked up by our receiver (sensor delay)
     interuptTriggered = false; 
   }
-      // Send updates
-      if(current.status_dirty)
-      {
-        send(msgStatus.set(current.status));
-        current.status_dirty = false;
-      }
-      if(current.mode_dirty)
-      {
-        send(msgMode.set(current.getMode()));
-        current.mode_dirty = false;
-      }
-      if(current.setpoint_dirty || (millis()-lastUpdateSent)>(25*60000))
-      {
-        send(msgSetpoint.set(current.getSetpoint(), 1));
-        current.setpoint_dirty = false;
-        lastUpdateSent = millis();
-      }
-      if(current.fan_dirty)
-      {
-        send(msgFan.set(current.getFan()));
-        current.fan_dirty = false;
-      }
-      if(current.profile_dirty)
-      {
-        send(msgProfile.set(current.getProfile()));
-        current.profile_dirty = false;
-      }
-      if(current.airSwing_dirty)
-      {
-        send(msgAirSwing.set(current.airSwing));
-        current.airSwing_dirty = false;
-      }
-      if(current.var1_dirty)
-      {
-        uint32_t value1 = 0;
-        VAR1_DATA *var1 = (VAR1_DATA*)(&value1);
-        var1->setpoint_auto=current.setpoint_auto*2.0;
-        var1->setpoint_heat=current.setpoint_heat*2.0;
-        var1->setpoint_cool=current.setpoint_cool*2.0;
-        var1->setpoint_dry=current.setpoint_dry*2.0;
-        send(msgVar1.set(value1));
-        current.var1_dirty = false;
-      }
-      if(current.var2_dirty)
-      {
-        uint32_t value2 = 0;
-        VAR2_DATA *var2 = (VAR2_DATA*)(&value2);
-        var2->setpoint_maintenance=current.setpoint_maintenance*2.0;
-        var2->fan_auto = current.fan_auto/10;
-        var2->fan_heat = current.fan_heat/10;
-        var2->fan_cool = current.fan_cool/10;
-        var2->fan_dry = current.fan_dry/10;
-        var2->fan_fan = current.fan_fan/10;
-        send(msgVar2.set(value2));
-        current.var2_dirty = false; 
-      }
+  // Send updates
+  if(model.statusIsDirty)
+  {
+    send(msgStatus.set(model.status));
+    model.statusIsDirty = false;
+  }
+  if(model.modeIsDirty)
+  {
+    send(msgMode.set(model.getMode()));
+    model.modeIsDirty = false;
+  }
+  // If dirty or not updated in 25 minutes (to prevent value from beeing "lost" in domoticz)
+  if(model.setpointIsDirty || (millis()-lastUpdateSent)>(25*60000))
+  {
+    send(msgSetpoint.set(model.getSetpoint(), 1));
+    model.setpointIsDirty = false;
+    lastUpdateSent = millis();
+  }
+  if(model.fanIsDirty)
+  {
+    send(msgFan.set(model.getFan()));
+    model.fanIsDirty = false;
+  }
+  if(model.profileIsDirty)
+  {
+    send(msgProfile.set(model.getProfile()));
+    model.profileIsDirty = false;
+  }
+  if(model.airSwingIsDirty)
+  {
+    send(msgAirSwing.set(model.airSwing));
+    model.airSwingIsDirty = false;
+  }
+  if(model.var1IsDirty)
+  {
+    uint32_t value1 = 0;
+    VAR1_DATA *var1 = (VAR1_DATA*)(&value1);
+    var1->setpointAuto=model.setpointAuto*2.0;
+    var1->setpointHeat=model.setpointHeat*2.0;
+    var1->setpointCool=model.setpointCool*2.0;
+    var1->setpointDry=model.setpointDry*2.0;
+    send(msgVar1.set(value1));
+    model.var1IsDirty = false;
+  }
+  if(model.var2IsDirty)
+  {
+    uint32_t value2 = 0;
+    VAR2_DATA *var2 = (VAR2_DATA*)(&value2);
+    var2->setpointMaintenance=model.setpointMaintenance*2.0;
+    var2->fanAuto = model.fanAuto/10;
+    var2->fanHeat = model.fanHeat/10;
+    var2->fanCool = model.fanCool/10;
+    var2->fanDry = model.fanDry/10;
+    var2->fanFan = model.fanFan/10;
+    send(msgVar2.set(value2));
+    model.var2IsDirty = false; 
+  }
 }
-
 
 // Handle incoming messages from the MySensors Gateway
 void receive(const MyMessage &message) 
@@ -511,44 +473,44 @@ void receive(const MyMessage &message)
   bool triggerSend = false;
   if(message.sensor == msgStatus.sensor)
   {
-      current.status = message.getBool();
-      current.status_dirty = true;
-      triggerSend = true;
+    model.status = message.getBool();
+    model.statusIsDirty = true;
+    triggerSend = true;
   }
   else if(message.sensor == msgMode.sensor)
   {
-      current.setMode(message.getInt());
-      triggerSend = true;
+    model.setMode(message.getInt());
+    triggerSend = true;
   }
   else if(message.sensor == msgFan.sensor)
   {
-      current.setFan(message.getInt());
-      triggerSend = true;
+    model.setFan(message.getInt());
+    triggerSend = true;
   }
   else if(message.sensor == msgAirSwing.sensor)
   { 
-      current.airSwing = message.getInt();
-      current.airSwing_dirty = true;
-      triggerSend = true;
+    model.airSwing = message.getInt();
+    model.airSwingIsDirty = true;
+    triggerSend = true;
   }
   else if(message.sensor == msgProfile.sensor)
   {
-      current.profile = message.getInt();
-      current.profile_dirty = true;
-      triggerSend = true;
+    model.profile = message.getInt();
+    model.profileIsDirty = true;
+    triggerSend = true;
   }
   else if(message.sensor == msgSetpoint.sensor)
   {
-      Serial.print(F("Received new setpoint: "));
-      Serial.println(message.getFloat());
-      current.setSetpoint(message.getFloat());
-      triggerSend = true;
+    model.setSetpoint(message.getFloat());
+    triggerSend = true;
   }
+  // If we received changes - transmitt new codes 
+  // TODO detect if something changed
   if(triggerSend)
   {
     lastCommandReceived = millis();
   }
-
+  // We received saved values - update model
   if(message.sensor == msgVar1.sensor && message.type == msgVar1.type)
   {
     uint32_t value = message.getLong();
@@ -556,91 +518,91 @@ void receive(const MyMessage &message)
     {
       VAR1_DATA *var1 = (VAR1_DATA*)(&value);
       //long value = message.getLong();
-      float tmp = var1->setpoint_auto/2.0;
+      float tmp = var1->setpointAuto/2.0;
       if(tmp >=16.0 && tmp <= 30.0)
-        current.setpoint_auto = tmp;
-      tmp = var1->setpoint_heat/2.0;
+        model.setpointAuto = tmp;
+      tmp = var1->setpointHeat/2.0;
       if(tmp >=16.0 && tmp <= 30.0)
-        current.setpoint_heat = tmp;
-      tmp = var1->setpoint_cool/2.0;
+        model.setpointHeat = tmp;
+      tmp = var1->setpointCool/2.0;
       if(tmp >=16.0 && tmp <= 30.0)
-        current.setpoint_cool = tmp;
-      tmp = var1->setpoint_dry/2.0;
+        model.setpointCool = tmp;
+      tmp = var1->setpointDry/2.0;
       if(tmp >=16.0 && tmp <= 30.0)
-        current.setpoint_dry = tmp;
+        model.setpointDry = tmp;
       Serial.println(F("Received saved values:"));
-      Serial.print(F("  setpoint_auto: "));
-      Serial.println(current.setpoint_auto);
-      Serial.print(F("  setpoint_heat: "));
-      Serial.println(current.setpoint_heat);
-      Serial.print(F("  setpoint_cool: "));
-      Serial.println(current.setpoint_cool);
-      Serial.print(F("  setpoint_dry: "));
-      Serial.println(current.setpoint_dry);
-      current.setpoint_dirty = true;
+      Serial.print(F("  setpointAuto: "));
+      Serial.println(model.setpointAuto);
+      Serial.print(F("  setpointHeat: "));
+      Serial.println(model.setpointHeat);
+      Serial.print(F("  setpointCool: "));
+      Serial.println(model.setpointCool);
+      Serial.print(F("  setpointDry: "));
+      Serial.println(model.setpointDry);
+      model.setpointIsDirty = true;
     }
-    
   }
+  // We received saved values - update model
   if(message.sensor == msgVar2.sensor && message.type == msgVar2.type)
   {
     uint32_t value = message.getLong();
     if(message.getLong()>0)
     {
       VAR2_DATA *var2 = (VAR2_DATA*)(&value);
-      float tmp = var2->setpoint_maintenance/2.0f;
+      float tmp = var2->setpointMaintenance/2.0f;
       if(tmp >=8 && tmp < 16)
-        current.setpoint_maintenance = tmp;
-      int fan = var2->fan_auto*10;
-      current.fan_auto=fan;
-      fan = var2->fan_heat*10;
-      current.fan_heat=fan;
-      fan = var2->fan_cool*10;
-      current.fan_cool=fan;
-      fan = var2->fan_dry*10;
-      current.fan_dry=fan;
-      fan = var2->fan_fan*10;
-      current.fan_fan=fan;
+        model.setpointMaintenance = tmp;
+      int fan = var2->fanAuto*10;
+      model.fanAuto=fan;
+      fan = var2->fanHeat*10;
+      model.fanHeat=fan;
+      fan = var2->fanCool*10;
+      model.fanCool=fan;
+      fan = var2->fanDry*10;
+      model.fanDry=fan;
+      fan = var2->fanFan*10;
+      model.fanFan=fan;
       Serial.println(F("Received saved values:"));
-      Serial.print("  setpoint_maintenance: ");
-      Serial.println(current.setpoint_maintenance);
-      Serial.print(F("  fan_auto: "));
-      Serial.println(current.fan_auto);      
-      Serial.print(F("  fan_heat: "));
-      Serial.println(current.fan_heat);      
-      Serial.print(F("  fan_cool: "));
-      Serial.println(current.fan_cool);      
-      Serial.print(F("  fan_dry: "));
-      Serial.println(current.fan_dry);      
-      Serial.print(F("  fan_fan: "));
-      Serial.println(current.fan_fan);      
-
+      Serial.print("  setpointMaintenance: ");
+      Serial.println(model.setpointMaintenance);
+      Serial.print(F("  fanAuto: "));
+      Serial.println(model.fanAuto);      
+      Serial.print(F("  fanHeat: "));
+      Serial.println(model.fanHeat);      
+      Serial.print(F("  fanCool: "));
+      Serial.println(model.fanCool);      
+      Serial.print(F("  fanDry: "));
+      Serial.println(model.fanDry);      
+      Serial.print(F("  fanFan: "));
+      Serial.println(model.fanFan);      
     }
   }
-
 }
 
-
-int receivePulses(void) {
+int receivePulses(void)
+{
+  // If ir-pin is low - don't try to read
   if((IRpin_PIN & (1 << IRpin))==0)
     return 0;
   
   uint16_t highpulse, lowpulse;  // temporary storage timing
   char symbolBuffer[2];
-   memset(symbolBuffer, 0, sizeof(symbolBuffer));
-  // Initialize the averages every time
-  mark_header_avg = 0;
-  mark_header_cnt = 0;
-  mark_bit_avg = 0;
-  mark_bit_cnt = 0;
-  space_zero_avg = 0;
-  space_zero_cnt = 0;
-  space_one_avg = 0;
-  space_one_cnt = 0;
-  space_header_avg = 0;
-  space_header_cnt = 0;
-  space_pause_avg = 0;
-  space_pause_cnt = 0;
+  memset(symbolBuffer, 0, sizeof(symbolBuffer));
 
+  uint32_t mark_header_avg = 0;
+  uint16_t mark_header_cnt = 0;
+  uint32_t mark_bit_avg = 0;
+  uint16_t mark_bit_cnt = 0;
+  uint32_t space_zero_avg = 0;
+  uint16_t space_zero_cnt = 0;
+  uint32_t space_one_avg = 0;
+  uint16_t space_one_cnt = 0;
+  uint32_t space_header_avg = 0;
+  uint16_t space_header_cnt = 0;
+  uint32_t space_pause_avg = 0;
+  uint16_t space_pause_cnt = 0;
+  uint16_t currentpulse = 0; // index for pulses we're storing
+  
   // Only Panasonic seems to use the pause
   space_pause_avg = 0;
   space_pause_cnt = 0;
@@ -648,7 +610,7 @@ int receivePulses(void) {
   int currbyte = 0; 
   int currbit = 0;
   memset(irbytes, 0, sizeof(bufferLength));
-  rbytes=0;
+  int rbytes=0;
   while (/*currentpulse < sizeof(symbols)*/true)
   {
      highpulse = 0;
@@ -744,24 +706,24 @@ void sendHeatpumpIRCommand()
   uint8_t buff[27];
   memcpy_P(buff, irtemplate, sizeof(irtemplate));
   // set values
-  setStatus(buff, current.status);
-  setMode(buff, current.getMode());
-  setSetpoint(buff, current.getSetpoint());
-  setAirSwingVertical(buff, current.airSwing);
-  setFan(buff, current.getFan());
-  setProfile(buff, current.profile);
+  setStatus(buff, model.status);
+  setMode(buff, model.getMode());
+  setSetpoint(buff, model.getSetpoint());
+  setAirSwingVertical(buff, model.airSwing);
+  setFan(buff, model.getFan());
+  setProfile(buff, model.profile);
   // Debug info - ir hex codes 
   Serial.println(F("Sending IR code to heatpump: "));
   sendPanasonic(irSender, buff);
   // Debug info - human readable
   printBuffer(buff);
   // Debug info - Verify that we can read the same values as we set from the buffer
-  verifyBuffer( readStatus(buff), current.status, "status");
-  verifyBuffer( readMode(buff), current.mode, "mode");
-  verifyBuffer( readSetpoint(buff), current.getSetpoint(), "setpoint");
-  verifyBuffer( readFan(buff), current.getFan(), "fan");
-  verifyBuffer( readAirSwingVertical(buff), current.airSwing, "airSwing");
-  verifyBuffer( readProfile(buff), current.profile, "profile");
+  verifyBuffer( readStatus(buff), model.status, "status");
+  verifyBuffer( readMode(buff), model.mode, "mode");
+  verifyBuffer( readSetpoint(buff), model.getSetpoint(), "setpoint");
+  verifyBuffer( readFan(buff), model.getFan(), "fan");
+  verifyBuffer( readAirSwingVertical(buff), model.airSwing, "airSwing");
+  verifyBuffer( readProfile(buff), model.profile, "profile");
 }
 
 // Print send buffer (ir codes) in human readable code
@@ -863,39 +825,39 @@ void printBuffer(byte *buffer)
 }
 void verifyBuffer(int was, int expected, char *name)
 {
-    if(was != expected)
-    {
-      Serial.print(F("Test failed. Difference found in sent ir code for "));
-      Serial.print(name);
-      Serial.print(F(". Was: "));
-      Serial.print(was);
-      Serial.print(F(", Expected: "));
-      Serial.println(expected);
-    }
+  if(was != expected)
+  {
+    Serial.print(F("Test failed. Difference found in sent ir code for "));
+    Serial.print(name);
+    Serial.print(F(". Was: "));
+    Serial.print(was);
+    Serial.print(F(", Expected: "));
+    Serial.println(expected);
+  }
 }
 void verifyBuffer(float was, float expected, char *name)
 {
-    if(was != expected)
-    {
-      Serial.print(F("Test failed. Difference found in sent ir code for "));
-      Serial.print(name);
-      Serial.print(F(". Was: "));
-      Serial.print(was);
-      Serial.print(F(", Expected: "));
-      Serial.println(expected);
-    }
+  if(was != expected)
+  {
+    Serial.print(F("Test failed. Difference found in sent ir code for "));
+    Serial.print(name);
+    Serial.print(F(". Was: "));
+    Serial.print(was);
+    Serial.print(F(", Expected: "));
+    Serial.println(expected);
+  }
 }
 void verifyBuffer(bool was, bool expected, char *name)
 {
-    if(was != expected)
-    {
-      Serial.print(F("Test failed. Difference found in sent ir code for "));
-      Serial.print(name);
-      Serial.print(F(". Was: "));
-      Serial.print(was);
-      Serial.print(F(", Expected: "));
-      Serial.println(expected);
-    }
+  if(was != expected)
+  {
+    Serial.print(F("Test failed. Difference found in sent ir code for "));
+    Serial.print(name);
+    Serial.print(F(". Was: "));
+    Serial.print(was);
+    Serial.print(F(", Expected: "));
+    Serial.println(expected);
+  }
 }
 
 // Checks if this seems to be a valid ir code
@@ -1009,98 +971,74 @@ bool decodePanasonicCS(byte *bytes, int byteCount)
   return true;
 }
 
-void fetchValues(byte *bytes)
+// Read data from received buffer and set the correct values in the model
+void transferRecivedDataToModel(byte *bytes)
 {
   bool status = readStatus(bytes);
-  if(current.status != status)
+  if(model.status != status)
   {
-      current.status=status;
-      current.status_dirty=true;
+      model.status=status;
+      model.statusIsDirty=true;
   }
-
   int mode = readMode(bytes);
-  if(current.getMode() != mode)
+  if(model.getMode() != mode)
   {
-    current.setMode(mode);
+    model.setMode(mode);
   }
-
   float setpoint = readSetpoint(bytes);
-  if(current.getSetpoint() != setpoint)
-    current.setSetpoint(setpoint);
-/*  if(current.mode == DOMO_MODE_MAINTENANCE)
-  {
-    if(current.setpoint != setpoint)
-    {
-      current.setpoint_maintenance=setpoint;
-      current.setpoint_dirty=true;
-    }
-  }
-  else
-  {
-    if(current.setpoint != setpoint)
-    {
-      current.setpoint=setpoint;
-      current.setpoint_dirty=true;
-    }
-  }*/
-
+  if(model.getSetpoint() != setpoint)
+    model.setSetpoint(setpoint);
   int fan = readFan(bytes);
-  if(current.getFan() != fan)
+  if(model.getFan() != fan)
   {
-    current.setFan(fan);
+    model.setFan(fan);
   }
-
   int profile = readProfile(bytes);
-  if(current.profile != profile)
+  if(model.profile != profile)
   {
-    current.profile = profile;
-    current.profile_dirty = true;  
+    model.profile = profile;
+    model.profileIsDirty = true;  
   }
   int airSwing = readAirSwingVertical(bytes);
-  if(current.airSwing != airSwing)
+  if(model.airSwing != airSwing)
   {
-    current.airSwing = airSwing;
-    current.airSwing_dirty = true;
+    model.airSwing = airSwing;
+    model.airSwingIsDirty = true;
   }
-
-
 }
 
 bool readStatus(byte *bytes)
 {
-    return (bytes[13] &0x01)==0x01;
+  return (bytes[13] &0x01)==0x01;
 }
 
 void setStatus(byte *bytes, bool status)
 {
-    bytes[13] = (bytes[13] &0xFE)|(status?0x01:0x00);
+  bytes[13] = (bytes[13] &0xFE)|(status?0x01:0x00);
 }
-
 
 int readMode(byte *bytes)
 {
-        // check mode
-        bool maintenanceHeat = !(bytes[14] & 0x20);
-
-        if(maintenanceHeat)
-          return DOMO_MODE_MAINTENANCE;
-
-        // if this byte is used for other things, first mask the correct bits
-          switch ((bytes[13]) & 0xF0){ // masks the first 4 bits 1111 0000
-            case PANASONIC_AIRCON2_MODE_AUTO: // auto
-                return DOMO_MODE_AUTO;
-            case PANASONIC_AIRCON2_MODE_HEAT: // heat
-                return DOMO_MODE_HEAT;
-            case PANASONIC_AIRCON2_MODE_COOL: // cool
-                return DOMO_MODE_COOL;
-            case PANASONIC_AIRCON2_MODE_DRY: // dry
-                return DOMO_MODE_DRY;
-            case PANASONIC_AIRCON2_MODE_FAN: // fan
-                return DOMO_MODE_FAN;
-            default:
-                return DOMO_UNDEFINED;
-          }
+  bool maintenanceHeat = !(bytes[14] & 0x20);
   
+  if(maintenanceHeat)
+    return DOMO_MODE_MAINTENANCE;
+
+  // if this byte is used for other things, first mask the correct bits
+  switch ((bytes[13]) & 0xF0){ // masks the first 4 bits 1111 0000
+    case PANASONIC_AIRCON2_MODE_AUTO: // auto
+      return DOMO_MODE_AUTO;
+    case PANASONIC_AIRCON2_MODE_HEAT: // heat
+      return DOMO_MODE_HEAT;
+    case PANASONIC_AIRCON2_MODE_COOL: // cool
+      return DOMO_MODE_COOL;
+    case PANASONIC_AIRCON2_MODE_DRY: // dry
+      return DOMO_MODE_DRY;
+    case PANASONIC_AIRCON2_MODE_FAN: // fan
+      return DOMO_MODE_FAN;
+    default:
+      return DOMO_UNDEFINED;
+  }
 }
 
 void setMode(byte *bytes, int mode)
@@ -1125,66 +1063,41 @@ void setMode(byte *bytes, int mode)
       break;
   }
 }
+
 float readSetpoint(byte *bytes)
 {
-            // check mode
-    //    bool maintenanceHeat = !(bytes[14] & 0x20);
-
-        // check temp
-        return ((int)bytes[14])/2.0f;
-/*        byte temp = (bytes[14] & 0x1E);
-        byte halftemp = (bytes[14] & 0x01);
-        temp = temp >> 1;
-        float value = (temp+(maintenanceHeat?0:16));
-        if(halftemp > 0)
-          value+=0.5;
-        return value;*/
+  return ((int)bytes[14])/2.0f;
 }
 
 void setSetpoint(byte *bytes, float setpoint)
 {
-  // Make sure its valid
   byte data =((int)(setpoint*2.0f));
   bytes[14]=data;
-  // if temp < 16.0
-        // check mode
-/*        bool maintenanceHeat = !(bytes[14] & 0x20);
-
-        // check temp
-        byte temp = (bytes[14] & 0x1E);
-        byte halftemp = (bytes[14] & 0x01);
-        temp = temp >> 1;
-        float value = (temp+(maintenanceHeat?0:16));
-        if(halftemp > 0)
-          value+=0.5;
-        return value;*/
 }
-
 
 int readFan(byte *bytes)
 {
-          // check fanspeed
-        switch (bytes[16] & 0xF0){ 
-            case PANASONIC_AIRCON2_FAN_AUTO:
-                return DOMO_FAN_AUTO; 
-            case PANASONIC_AIRCON2_FAN1:
-                return DOMO_FAN_1; 
-            case PANASONIC_AIRCON2_FAN2:
-                return DOMO_FAN_2; 
-            case PANASONIC_AIRCON2_FAN3:
-                return DOMO_FAN_3; 
-            case PANASONIC_AIRCON2_FAN4:
-                return DOMO_FAN_4; 
-            case PANASONIC_AIRCON2_FAN5:
-                return DOMO_FAN_5; 
-            default:
-              return DOMO_UNDEFINED;
-        }
+  switch (bytes[16] & 0xF0){ 
+    case PANASONIC_AIRCON2_FAN_AUTO:
+      return DOMO_FAN_AUTO; 
+    case PANASONIC_AIRCON2_FAN1:
+      return DOMO_FAN_1; 
+    case PANASONIC_AIRCON2_FAN2:
+      return DOMO_FAN_2; 
+    case PANASONIC_AIRCON2_FAN3:
+      return DOMO_FAN_3; 
+    case PANASONIC_AIRCON2_FAN4:
+      return DOMO_FAN_4; 
+    case PANASONIC_AIRCON2_FAN5:
+      return DOMO_FAN_5; 
+    default:
+      return DOMO_UNDEFINED;
+  }
 }
+
 void setFan(byte *bytes, int fan)
 {
-    switch(fan)
-  {
+  switch(fan){
     case DOMO_FAN_AUTO:
       bytes[16] = (bytes[16]&0xF)|PANASONIC_AIRCON2_FAN_AUTO;
       break;
@@ -1208,123 +1121,82 @@ void setFan(byte *bytes, int fan)
 
 int readProfile(byte *bytes)
 {
-          // Check profile
-        switch(bytes[21]){
-           case PANASONIC_AIRCON2_PROFILE_NORMAL:
-              return DOMO_PROFILE_NORMAL; 
-           case PANASONIC_AIRCON2_POWERFUL:
-              return DOMO_PROFILE_POWERFUL;
-           case PANASONIC_AIRCON2_QUIET:
-              return DOMO_PROFILE_QUIET; 
-           default:
-              return DOMO_UNDEFINED;
-        }
+  // Check profile
+  switch(bytes[21]){
+    case PANASONIC_AIRCON2_PROFILE_NORMAL:
+      return DOMO_PROFILE_NORMAL; 
+    case PANASONIC_AIRCON2_POWERFUL:
+      return DOMO_PROFILE_POWERFUL;
+    case PANASONIC_AIRCON2_QUIET:
+      return DOMO_PROFILE_QUIET; 
+    default:
+      return DOMO_UNDEFINED;
+  }
 }
 void setProfile(byte *bytes, int profile)
 {
-          // Check profile
-        switch(profile){
-           case DOMO_PROFILE_NORMAL:
-              bytes[21] = PANASONIC_AIRCON2_PROFILE_NORMAL;
-              break;
-           case DOMO_PROFILE_POWERFUL:
-              bytes[21] = PANASONIC_AIRCON2_POWERFUL;
-              break;
-           case DOMO_PROFILE_QUIET:
-              bytes[21] = PANASONIC_AIRCON2_QUIET;
-              break;
-        }
+  // Check profile
+  switch(profile){
+    case DOMO_PROFILE_NORMAL:
+      bytes[21] = PANASONIC_AIRCON2_PROFILE_NORMAL;
+      break;
+    case DOMO_PROFILE_POWERFUL:
+      bytes[21] = PANASONIC_AIRCON2_POWERFUL;
+      break;
+    case DOMO_PROFILE_QUIET:
+      bytes[21] = PANASONIC_AIRCON2_QUIET;
+      break;
+  }
 }
 
 
 int readAirSwingVertical(byte *bytes)
 {
-          // check vertical swing
-        switch (bytes[16] & 0x0F){ // 0x0F = 0000 1111
-            case PANASONIC_AIRCON2_VS_AUTO:
-                return DOMO_VERTICAL_AIR_AUTO; // auto
-            case PANASONIC_AIRCON2_VS_UP:
-                return DOMO_VERTICAL_AIR_STRAIGHT; // Straight
-            case PANASONIC_AIRCON2_VS_MUP:
-                return DOMO_VERTICAL_AIR_DOWN1; // down 1
-            case PANASONIC_AIRCON2_VS_MIDDLE:
-                return DOMO_VERTICAL_AIR_DOWN2; // down 2
-            case PANASONIC_AIRCON2_VS_MDOWN:
-                return DOMO_VERTICAL_AIR_DOWN3; // down 3
-            case PANASONIC_AIRCON2_VS_DOWN:
-                return DOMO_VERTICAL_AIR_DOWN4; // down 4
-            default:
-                return DOMO_UNDEFINED;
-        }
+  // check vertical swing
+  switch (bytes[16] & 0x0F){
+    case PANASONIC_AIRCON2_VS_AUTO:
+      return DOMO_VERTICAL_AIR_AUTO; // auto
+    case PANASONIC_AIRCON2_VS_UP:
+      return DOMO_VERTICAL_AIR_STRAIGHT; // Straight
+    case PANASONIC_AIRCON2_VS_MUP:
+      return DOMO_VERTICAL_AIR_DOWN1; // down 1
+    case PANASONIC_AIRCON2_VS_MIDDLE:
+      return DOMO_VERTICAL_AIR_DOWN2; // down 2
+    case PANASONIC_AIRCON2_VS_MDOWN:
+      return DOMO_VERTICAL_AIR_DOWN3; // down 3
+    case PANASONIC_AIRCON2_VS_DOWN:
+      return DOMO_VERTICAL_AIR_DOWN4; // down 4
+    default:
+      return DOMO_UNDEFINED;
+  }
 }
 void setAirSwingVertical(byte *bytes, int airswing)
 {
-
-          // check vertical swing
-        switch (airswing){
-            case DOMO_VERTICAL_AIR_AUTO:
-                bytes[16] = (bytes[16] & 0xF0) | PANASONIC_AIRCON2_VS_AUTO;
-                break;
-            case DOMO_VERTICAL_AIR_STRAIGHT:
-                bytes[16] = (bytes[16] & 0xF0) | PANASONIC_AIRCON2_VS_UP;
-                break;
-            case DOMO_VERTICAL_AIR_DOWN1:
-                bytes[16] = (bytes[16] & 0xF0) | PANASONIC_AIRCON2_VS_MUP;
-                break;
-            case DOMO_VERTICAL_AIR_DOWN2:
-                bytes[16] = (bytes[16] & 0xF0) | PANASONIC_AIRCON2_VS_MIDDLE;
-                break;
-            case DOMO_VERTICAL_AIR_DOWN3:
-                bytes[16] = (bytes[16] & 0xF0) | PANASONIC_AIRCON2_VS_MDOWN;
-                break;
-            case DOMO_VERTICAL_AIR_DOWN4:
-                bytes[16] = (bytes[16] & 0xF0) | PANASONIC_AIRCON2_VS_DOWN;
-                break;
-        }
-}
-
-int readAirSwingHorizontal(byte *bytes)
-{
-          // check horizontal swing
-        switch (bytes[17] & 0x0F){ // 0x0F = 0000 1111
-            case 0x0D:
-                return 0; // auto
-            case 0x06:
-                return 30; // center;
-            case 0x09:
-                return 10; // left
-            case 0x0A:
-                return 20; // left center
-            case 0x0B:
-                return 40; // right center
-            case 0x0C:
-                return 50; // right
-            default:
-                return 100;
-        }
+  // check vertical swing
+  switch (airswing){
+    case DOMO_VERTICAL_AIR_AUTO:
+      bytes[16] = (bytes[16] & 0xF0) | PANASONIC_AIRCON2_VS_AUTO;
+      break;
+    case DOMO_VERTICAL_AIR_STRAIGHT:
+      bytes[16] = (bytes[16] & 0xF0) | PANASONIC_AIRCON2_VS_UP;
+      break;
+    case DOMO_VERTICAL_AIR_DOWN1:
+      bytes[16] = (bytes[16] & 0xF0) | PANASONIC_AIRCON2_VS_MUP;
+      break;
+    case DOMO_VERTICAL_AIR_DOWN2:
+      bytes[16] = (bytes[16] & 0xF0) | PANASONIC_AIRCON2_VS_MIDDLE;
+      break;
+    case DOMO_VERTICAL_AIR_DOWN3:
+      bytes[16] = (bytes[16] & 0xF0) | PANASONIC_AIRCON2_VS_MDOWN;
+      break;
+    case DOMO_VERTICAL_AIR_DOWN4:
+      bytes[16] = (bytes[16] & 0xF0) | PANASONIC_AIRCON2_VS_DOWN;
+      break;
+  }
 }
 
 void sendPanasonic(IRSender& IR, byte *buffer)
 {
-/*  switch(_panasonicModel)
-  {
-    case PANASONIC_DKE:
-      panasonicTemplate[17] = swingH; // Only the DKE model has a setting for the horizontal air flow
-      panasonicTemplate[23] = 0x01;
-      panasonicTemplate[25] = 0x06;
-      break;
-    case PANASONIC_JKE:
-      break;
-    case PANASONIC_NKE:
-      panasonicTemplate[17] = 0x06;
-      break;
-    case PANASONIC_LKE:
-      panasonicTemplate[17] = 0x06;
-      panasonicTemplate[13] = 0x02;
-      break;
-  }
-*/
-
   // Checksum calculation
   uint8_t checksum = 0xF4;
 
@@ -1374,7 +1246,5 @@ void sendPanasonic(IRSender& IR, byte *buffer)
 
   IR.mark(PANASONIC_AIRCON2_BIT_MARK);
   IR.space(0);
-  
-//  memcpy_P(lastSendBuffer, panasonicTemplate, sizeof(panasonicTemplate));
 }
 
