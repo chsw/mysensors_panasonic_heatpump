@@ -45,8 +45,12 @@
 #include <IRSender.h>
 #include <PanasonicHeatpumpIR.h>
 
-// Humidity & temperature sensor
-#include <Wire.h>
+// LCD
+#include <LiquidCrystal_I2C.h>
+
+// Initialize display. Google the correct settings for your display. 
+// The follwoing setting should work for the recommended display in the MySensors "shop".
+LiquidCrystal_I2C lcd(0x3F, 2, 1, 0, 4, 5, 6, 7, 3, POSITIVE);
 
 #define DOMO_UNDEFINED 0
 #define DOMO_MODE_AUTO 10
@@ -135,7 +139,7 @@ class HeatpumpModel
     int fanFan = 20;
     bool fanIsDirty = false;
     
-    int airSwing = 0;
+    int airSwing = DOMO_VERTICAL_AIR_AUTO;
     bool airSwingIsDirty = false;
     
     int profile = 10;
@@ -346,6 +350,14 @@ IRSenderPWM irSender(3);
 void setup()
 {
   Serial.println(F("Panasonic Heatpump Remote starting up..."));
+
+  // initialize the lcd for 16 chars 2 lines and turn on backlight
+  lcd.begin(16,2); 
+  lcd.home();
+  lcd.print("Panasonic");
+  lcd.setCursor(0,1);
+  lcd.print("Starting up");
+  
   request(msgVar1.sensor, msgVar1.type);
   request(msgVar2.sensor, msgVar2.type);
   request(msgStatus.sensor, msgStatus.type);
@@ -396,6 +408,7 @@ void loop()
     if(count > 0 && decodePanasonicCS(irbytes, count))
     {
       transferRecivedDataToModel(irbytes);
+      updateDisplay();
     }
   }
   // If we received new command since last IR transmitt - transmitt model to heat pump
@@ -407,6 +420,7 @@ void loop()
     // Dont trigger on our own transmitt
     delay(10); // This delay is needed as transmitted signals might be picked up by our receiver (sensor delay)
     interuptTriggered = false; 
+    updateDisplay();
   }
   // Send updates
   if(model.statusIsDirty)
@@ -1246,5 +1260,72 @@ void sendPanasonic(IRSender& IR, byte *buffer)
 
   IR.mark(PANASONIC_AIRCON2_BIT_MARK);
   IR.space(0);
+}
+
+void updateDisplay()
+{
+  lcd.clear();
+  lcd.home();
+  switch(model.getMode())
+  {
+    case DOMO_MODE_AUTO:
+      lcd.print("Auto");
+      break;
+    case DOMO_MODE_HEAT:
+      lcd.print("Heat");
+      break;
+    case DOMO_MODE_COOL:
+      lcd.print("Cool");
+      break;
+    case DOMO_MODE_DRY:
+      lcd.print("Dry");
+      break;
+    case DOMO_MODE_FAN:
+      lcd.print("Fan ");
+      break;
+    case DOMO_MODE_MAINTENANCE:
+      lcd.print("Maintenance");
+      break;
+    }
+    if(model.getMode()!=DOMO_MODE_FAN)
+    {
+      lcd.setCursor(12,0);
+      lcd.print(model.getSetpoint(),1);
+    }
+    if(model.getMode()!=DOMO_MODE_MAINTENANCE)
+    {
+      lcd.setCursor(6,0);
+      if(model.getProfile()==DOMO_PROFILE_POWERFUL)
+      {
+        lcd.print("Power");
+      }
+      else if(model.getProfile()==DOMO_PROFILE_QUIET)
+      {
+        lcd.print("Quiet");
+      }
+    }
+    lcd.setCursor(0,1);
+    lcd.print("Fan ");
+    if(model.getFan()==DOMO_FAN_AUTO)
+      lcd.print("Auto");
+    else
+    {
+      lcd.print(model.getFan()/10-1);
+      lcd.print("/5");
+    }
+    lcd.print(" ");
+    switch(model.airSwing)
+    {
+      case DOMO_VERTICAL_AIR_AUTO:
+        if(model.getFan()!=DOMO_FAN_AUTO)
+          lcd.print("Auto Swing");
+        break;
+      case DOMO_VERTICAL_AIR_STRAIGHT:
+        lcd.print("Horizontal");
+        break;
+      default:
+        lcd.print("Down");
+        lcd.print((model.airSwing-DOMO_VERTICAL_AIR_STRAIGHT)/10);
+    }
 }
 
