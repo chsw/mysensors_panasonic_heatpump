@@ -354,9 +354,9 @@ void setup()
   // initialize the lcd for 16 chars 2 lines and turn on backlight
   lcd.begin(16,2); 
   lcd.home();
-  lcd.print("Panasonic");
+  lcd.print(F("Panasonic"));
   lcd.setCursor(0,1);
-  lcd.print("Starting up");
+  lcd.print(F("Starting up"));
   
   request(msgVar1.sensor, msgVar1.type);
   request(msgVar2.sensor, msgVar2.type);
@@ -577,7 +577,7 @@ void receive(const MyMessage &message)
       fan = var2->fanFan*10;
       model.fanFan=fan;
       Serial.println(F("Received saved values:"));
-      Serial.print("  setpointMaintenance: ");
+      Serial.print(F("  setpointMaintenance: "));
       Serial.println(model.setpointMaintenance);
       Serial.print(F("  fanAuto: "));
       Serial.println(model.fanAuto);      
@@ -1269,22 +1269,22 @@ void updateDisplay()
   switch(model.getMode())
   {
     case DOMO_MODE_AUTO:
-      lcd.print("Auto");
+      lcd.print(F("Auto"));
       break;
     case DOMO_MODE_HEAT:
-      lcd.print("Heat");
+      lcd.print(F("Heat"));
       break;
     case DOMO_MODE_COOL:
-      lcd.print("Cool");
+      lcd.print(F("Cool"));
       break;
     case DOMO_MODE_DRY:
-      lcd.print("Dry");
+      lcd.print(F("Dry"));
       break;
     case DOMO_MODE_FAN:
-      lcd.print("Fan ");
+      lcd.print(F("Fan "));
       break;
     case DOMO_MODE_MAINTENANCE:
-      lcd.print("Maintenance");
+      lcd.print(F("Maintenance"));
       break;
     }
     if(model.getMode()!=DOMO_MODE_FAN)
@@ -1297,35 +1297,55 @@ void updateDisplay()
       lcd.setCursor(6,0);
       if(model.getProfile()==DOMO_PROFILE_POWERFUL)
       {
-        lcd.print("Power");
+        lcd.print(F("Power"));
       }
       else if(model.getProfile()==DOMO_PROFILE_QUIET)
       {
-        lcd.print("Quiet");
+        lcd.print(F("Quiet"));
       }
     }
     lcd.setCursor(0,1);
-    lcd.print("Fan ");
-    if(model.getFan()==DOMO_FAN_AUTO)
-      lcd.print("Auto");
-    else
-    {
-      lcd.print(model.getFan()/10-1);
-      lcd.print("/5");
-    }
-    lcd.print(" ");
+    lcd.print(F("Fan "));
+    bool printedAuto = false;
     switch(model.airSwing)
     {
       case DOMO_VERTICAL_AIR_AUTO:
-        if(model.getFan()!=DOMO_FAN_AUTO)
-          lcd.print("Auto Swing");
+        lcd.print(F("Auto"));
+        printedAuto = true;
         break;
       case DOMO_VERTICAL_AIR_STRAIGHT:
-        lcd.print("Horizontal");
+        lcd.print(F("15"));
+        lcd.print((char)223);
+        break;
+      case DOMO_VERTICAL_AIR_DOWN1:
+        lcd.print(F("22"));
+        lcd.print((char)223);
+        break;
+      case DOMO_VERTICAL_AIR_DOWN2:
+        lcd.print(F("30"));
+        lcd.print((char)223);
+        break;
+      case DOMO_VERTICAL_AIR_DOWN3:
+        lcd.print(F("37"));
+        lcd.print((char)223);
+        break;
+      case DOMO_VERTICAL_AIR_DOWN4:
+        lcd.print(F("45"));
+        lcd.print((char)223);
         break;
       default:
-        lcd.print("Down");
-        lcd.print((model.airSwing-DOMO_VERTICAL_AIR_STRAIGHT)/10);
+        lcd.print(F("UNDEFINED"));
+    }
+    lcd.print(F(" "));
+    if(model.getFan()==DOMO_FAN_AUTO)
+    {
+      if(printedAuto == false)
+        lcd.print(F("Auto"));
+    }
+    else
+    {
+      lcd.print(model.getFan()/10-1);
+      lcd.print(F("/5"));
     }
 }
 
